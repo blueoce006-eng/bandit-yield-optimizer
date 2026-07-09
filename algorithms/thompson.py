@@ -1,5 +1,7 @@
 """
-Gaussian Thompson Sampling.
+thompson.py
+
+Gaussian Thompson Sampling for continuous rewards.
 """
 
 from __future__ import annotations
@@ -10,141 +12,118 @@ from algorithms.base import BanditAlgorithm
 
 
 class ThompsonSampling(BanditAlgorithm):
+    """
+    Gaussian Thompson Sampling.
+
+    Assumptions
+    -----------
+    - Continuous rewards
+    - Gaussian likelihood
+    - Independent arms
+    """
 
     def __init__(
-
         self,
-
-        n_arms,
-
-        prior_mean=0.0,
-
-        prior_variance=1.0,
-
-        observation_variance=1.0,
-
+        n_arms: int,
+        prior_mean: float = 0.0,
+        prior_precision: float = 1.0,
+        reward_precision: float = 1.0,
         rng=None,
-
     ):
 
         super().__init__(
-
             n_arms=n_arms,
-
             rng=rng,
-
         )
 
         self.prior_mean = prior_mean
-
-        self.prior_variance = prior_variance
-
-        self.observation_variance = observation_variance
+        self.prior_precision = prior_precision
+        self.reward_precision = reward_precision
 
         self.posterior_mean = np.full(
-
             n_arms,
-
             prior_mean,
-
+            dtype=float,
         )
 
-        self.posterior_variance = np.full(
-
+        self.posterior_precision = np.full(
             n_arms,
-
-            prior_variance,
-
+            prior_precision,
+            dtype=float,
         )
 
-    # ---------------------------------------------
+    # -------------------------------------------------
 
-    def select_arm(self):
+    def select_arm(self) -> int:
+        """
+        Sample one value from each posterior.
+        """
+
+        variance = 1.0 / self.posterior_precision
 
         samples = self.rng.normal(
-
             self.posterior_mean,
-
-            np.sqrt(
-
-                self.posterior_variance
-
-            ),
-
+            np.sqrt(variance),
         )
 
-        return int(
+        return int(np.argmax(samples))
 
-            np.argmax(
-
-                samples
-
-            )
-
-        )
-
-    # ---------------------------------------------
+    # -------------------------------------------------
 
     def update(
-
         self,
-
-        arm,
-
-        reward,
-
+        arm: int,
+        reward: float,
     ):
 
-        prior_mean = self.posterior_mean[arm]
-
-        prior_var = self.posterior_variance[arm]
-
-        obs_var = self.observation_variance
-
-        posterior_var = (
-
-            1
-
-            /
-
-            (
-
-                1/prior_var
-
-                +
-
-                1/obs_var
-
-            )
-
+        precision = (
+            self.posterior_precision[arm]
+            + self.reward_precision
         )
 
-        posterior_mean = (
+        mean = (
+            self.posterior_precision[arm]
+            * self.posterior_mean[arm]
+            + self.reward_precision
+            * reward
+        ) / precision
 
-            posterior_var
-
-            *
-
-            (
-
-                prior_mean/prior_var
-
-                +
-
-                reward/obs_var
-
-            )
-
-        )
-
-        self.posterior_mean[arm] = posterior_mean
-
-        self.posterior_variance[arm] = posterior_var
+        self.posterior_precision[arm] = precision
+        self.posterior_mean[arm] = mean
 
         super().update(
-
             arm,
-
             reward,
-
         )
+
+    # -------------------------------------------------
+
+    def reset(self):
+
+        super().reset()
+
+        self.posterior_mean = np.full(
+            self.n_arms,
+            self.prior_mean,
+            dtype=float,
+        )
+
+        self.posterior_precision = np.full(
+            self.n_arms,
+            self.prior_precision,
+            dtype=float,
+        )
+
+    # -------------------------------------------------
+
+    def statistics(self):
+
+        stats = super().statistics()
+
+        stats["posterior_mean"] = self.posterior_mean.copy()
+
+        stats["posterior_variance"] = (
+            1.0 / self.posterior_precision
+        )
+
+        return stats
